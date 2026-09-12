@@ -1,0 +1,239 @@
+@page "/mail"
+
+@inject GmailService GmailService
+@inject GoogleSheetsService GoogleSheetsService
+@inject AppState AppState
+@implements IDisposable
+
+<PageTitle>Mail</PageTitle>
+
+<h1>Mail</h1>
+
+@if (AppState.SelectedSheet is null)
+{
+    <p>Select a sheet first on the Sheets page.</p>
+}
+else
+{
+    <p class="text-muted">Sheet: <strong>@AppState.SelectedSheet.Name</strong></p>
+    <p>Selected recipients: <strong>@AppState.SelectedPeople.Count</strong></p>
+
+    @if (AppState.SelectedPeople.Count == 0)
+    {
+        <p>Go to People and select at least one recipient.</p>
+    }
+
+    <div class="card p-3 mb-3">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label" for="templateSelect">Template</label>
+                <select id="templateSelect" class="form-select" @bind="selectedTemplateName">
+                    <option value="">Choose template...</option>
+                    @foreach (var template in templates)
+                    {
+                        <option value="@template.Name">@template.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-outline-secondary w-100" @onclick="LoadTemplateAsync" disabled="@isSending">Load template</button>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label" for="templateName">Save as template name</label>
+                <input id="templateName" class="form-control" @bind="templateName" />
+            </div>
+        </div>
+
+        <div class="mt-2">
+            <button class="btn btn-outline-primary" @onclick="SaveTemplateAsync" disabled="@isSending">Save template</button>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label for="subject" class="form-label">Subject</label>
+        <input id="subject" class="form-control" @bind="subject" />
+    </div>
+
+    <div class="form-check mb-3">
+        <input id="isHtml" class="form-check-input" type="checkbox" @bind="isHtml" />
+        <label for="isHtml" class="form-check-label">Send as HTML</label>
+    </div>
+
+    <div class="mb-3">
+        <label for="message" class="form-label">Message</label>
+        <textarea id="message" class="form-control" rows="7" @bind="message"></textarea>
+    </div>
+
+    <button class="btn btn-primary" @onclick="SendAsync" disabled="@(isSending || AppState.SelectedPeople.Count == 0)">Send</button>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger mt-3">@errorMessage</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <div class="alert alert-success mt-3">@successMessage</div>
+    }
+}
+
+@code {
+    private string subject = "Test mail";
+    private string message = "Hej {Name},\n\nDette er en testmail fra vores POC.";
+    private bool isHtml;
+    private bool isSending;
+    private string? errorMessage;
+    private string? successMessage;
+    private string templateName = "Default";
+    private string selectedTemplateName = string.Empty;
+    private readonly List<MailTemplate> templates = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        AppState.Changed += OnAppStateChanged;
+        await LoadTemplatesForCurrentSheetAsync();
+    }
+
+    public void Dispose()
+    {
+        AppState.Changed -= OnAppStateChanged;
+    }
+
+    private void OnAppStateChanged()
+    {
+        _ = InvokeAsync(LoadTemplatesForCurrentSheetAsync);
+    }
+
+    private async Task LoadTemplatesForCurrentSheetAsync()
+    {
+        if (AppState.SelectedSheet is null)
+        {
+            templates.Clear();
+            selectedTemplateName = string.Empty;
+            return;
+        }
+
+        try
+        {
+            templates.Clear();
+            templates.AddRange(await GoogleSheetsService.GetMailTemplatesAsync(AppState.SelectedSheet.Id));
+
+            if (!templates.Any(x => string.Equals(x.Name, selectedTemplateName, StringComparison.OrdinalIgnoreCase)))
+            {
+                selectedTemplateName = string.Empty;
+            }
+        }
+        catch
+        {
+            // Do not block the mail UI if template loading fails.
+        }
+    }
+
+    private async Task SaveTemplateAsync()
+    {
+        errorMessage = null;
+        successMessage = null;
+
+        if (AppState.SelectedSheet is null)
+        {
+            errorMessage = "Select a sheet first.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(templateName))
+        {
+            errorMessage = "Template name is required.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(message))
+        {
+            errorMessage = "Subject and message are required.";
+            return;
+        }
+
+        isSending = true;
+        try
+        {
+            await GoogleSheetsService.SaveMailTemplateAsync(AppState.SelectedSheet.Id, new MailTemplate
+            {
+                Name = templateName,
+                Subject = subject,
+                Body = message,
+                IsHtml = isHtml
+            });
+
+            await LoadTemplatesForCurrentSheetAsync();
+            selectedTemplateName = templateName;
+            successMessage = $"Template '{templateName}' saved.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isSending = false;
+        }
+    }
+
+    private Task LoadTemplateAsync()
+    {
+        errorMessage = null;
+        successMessage = null;
+
+        var selected = templates.FirstOrDefault(x => string.Equals(x.Name, selectedTemplateName, StringComparison.OrdinalIgnoreCase));
+        if (selected is null)
+        {
+            errorMessage = "Select a template to load.";
+            return Task.CompletedTask;
+        }
+
+        templateName = selected.Name;
+        subject = selected.Subject;
+        message = selected.Body;
+        isHtml = selected.IsHtml;
+        successMessage = $"Template '{selected.Name}' loaded.";
+
+        return Task.CompletedTask;
+    }
+
+    private async Task SendAsync()
+    {
+        errorMessage = null;
+        successMessage = null;
+
+        if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(message))
+        {
+            errorMessage = "Subject and message are required.";
+            return;
+        }
+
+        if (AppState.SelectedPeople.Count == 0)
+        {
+            errorMessage = "No recipients selected.";
+            return;
+        }
+
+        isSending = true;
+
+        try
+        {
+            foreach (var person in AppState.SelectedPeople)
+            {
+                var renderedBody = message.Replace("{Name}", person.Name, StringComparison.Ordinal);
+                await GmailService.SendEmailAsync(person.Email, subject, renderedBody, isHtml);
+            }
+
+            successMessage = $"Sent {AppState.SelectedPeople.Count} message(s).";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isSending = false;
+        }
+    }
+}

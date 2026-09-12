@@ -1,7 +1,100 @@
 ﻿@page "/"
+@inject IGoogleAuthService GoogleAuthService
+@inject AppState AppState
+@inject IConfiguration Configuration
 
 <PageTitle>Home</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1>Home</h1>
 
-Welcome to your new app.
+<p>Authentication status: <strong>@(currentUser is null ? "Signed out" : "Signed in")</strong></p>
+
+@if (currentUser is null)
+{
+	<button class="btn btn-primary" @onclick="SignInAsync" disabled="@isBusy">Sign in with Google</button>
+}
+else
+{
+	<div class="card p-3 mb-3" style="max-width: 520px;">
+		<div class="d-flex align-items-center gap-3">
+			@if (!string.IsNullOrWhiteSpace(currentUser.Picture))
+			{
+				<img src="@currentUser.Picture" alt="Profile" width="64" height="64" class="rounded-circle" />
+			}
+			<div>
+				<div><strong>@currentUser.Name</strong></div>
+				<div class="text-muted">@currentUser.Email</div>
+			</div>
+		</div>
+	</div>
+	<button class="btn btn-outline-secondary" @onclick="SignOutAsync" disabled="@isBusy">Sign out</button>
+}
+
+<hr />
+
+<p>Selected sheet: <strong>@(AppState.SelectedSheet?.Name ?? "None")</strong></p>
+
+@if (!string.IsNullOrWhiteSpace(repoUrl))
+{
+	<p><a href="@repoUrl" target="_blank" rel="noopener noreferrer">GitHub repository</a></p>
+}
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+	<div class="alert alert-danger">@errorMessage</div>
+}
+
+@code {
+	private GoogleUser? currentUser;
+	private bool isBusy;
+	private string? errorMessage;
+	private string? repoUrl;
+
+	protected override async Task OnInitializedAsync()
+	{
+		repoUrl = Configuration["GitHub:RepositoryUrl"];
+		currentUser = await GoogleAuthService.GetCurrentUserAsync();
+	}
+
+	private async Task SignInAsync()
+	{
+		isBusy = true;
+		errorMessage = null;
+
+		try
+		{
+			await GoogleAuthService.RequestAccessTokenAsync();
+			currentUser = await GoogleAuthService.GetCurrentUserAsync();
+		}
+		catch (Exception ex)
+		{
+			errorMessage = ex.Message;
+		}
+		finally
+		{
+			isBusy = false;
+		}
+	}
+
+	private async Task SignOutAsync()
+	{
+		isBusy = true;
+		errorMessage = null;
+
+		try
+		{
+			await GoogleAuthService.SignOutAsync();
+			currentUser = null;
+			AppState.ClearSelectedPeople();
+			AppState.SetSelectedSheet(null);
+		}
+		catch (Exception ex)
+		{
+			errorMessage = ex.Message;
+		}
+		finally
+		{
+			isBusy = false;
+		}
+	}
+}
