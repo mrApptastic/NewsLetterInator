@@ -16,6 +16,12 @@ else
 
     <div class="mb-3">
         <button class="btn btn-primary" @onclick="LoadPeopleAsync" disabled="@isLoading">Refresh People</button>
+        <span class="ms-1">
+            <label class="form-check-label">
+                <input type="checkbox" class="form-check-input" checked="@checkAll" @onchange="ToggleSelectAll" />
+                Select All
+            </label>
+        </span>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(errorMessage))
@@ -76,6 +82,7 @@ else
     private readonly List<Person> people = [];
     private Person newPerson = new();
     private bool isLoading;
+    private bool checkAll = false;
     private string? errorMessage;
     private string? successMessage;
 
@@ -149,5 +156,14 @@ else
     {
         var isSelected = args.Value is bool b && b;
         AppState.SetPersonSelected(person, isSelected);
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs args)
+    {
+        checkAll = args.Value is bool b && b;
+        foreach (var person in people)
+        {
+            AppState.SetPersonSelected(person, checkAll);
+        }
     }
 }

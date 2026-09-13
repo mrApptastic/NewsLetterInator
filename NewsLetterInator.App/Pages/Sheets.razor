@@ -74,6 +74,10 @@ else
         {
             sheets.Clear();
             sheets.AddRange(await GoogleSheetsService.GetSheetsAsync());
+            
+            if (sheets.Count > 0) {
+                SelectSheet(sheets[0]);
+            }
         }
         catch (Exception ex)
         {
