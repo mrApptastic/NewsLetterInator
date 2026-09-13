@@ -64,6 +64,32 @@ else
         <textarea id="message" class="form-control" rows="7" @bind="message"></textarea>
     </div>
 
+    <div class="mb-3">
+        <label for="attachments" class="form-label">Attachments</label>
+        <InputFile id="attachments" class="form-control" OnChange="HandleAttachmentsSelected" multiple />
+        <div class="form-text">Attachments are sent with the email and are not stored in templates.</div>
+    </div>
+
+    @if (attachments.Count > 0)
+    {
+        <div class="mb-3">
+            <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                <strong>Selected files</strong>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ClearAttachments" disabled="@isSending">Clear</button>
+            </div>
+
+            <ul class="list-group">
+                @foreach (var attachment in attachments)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span>@attachment.FileName</span>
+                        <small class="text-muted">@FormatFileSize(attachment.Size)</small>
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+
     <button class="btn btn-primary" @onclick="SendAsync" disabled="@(isSending || AppState.SelectedPeople.Count == 0)">Send</button>
 
     @if (!string.IsNullOrWhiteSpace(errorMessage))
@@ -87,6 +113,8 @@ else
     private string templateName = "Default";
     private string selectedTemplateName = string.Empty;
     private readonly List<MailTemplate> templates = [];
+    private readonly List<MailAttachment> attachments = [];
+    private const long MaxAttachmentSize = 10 * 1024 * 1024;
 
     protected override async Task OnInitializedAsync()
     {
@@ -198,6 +226,49 @@ else
         return Task.CompletedTask;
     }
 
+    private async Task HandleAttachmentsSelected(InputFileChangeEventArgs e)
+    {
+        errorMessage = null;
+        successMessage = null;
+        attachments.Clear();
+
+        try
+        {
+            foreach (var file in e.GetMultipleFiles())
+            {
+                if (file.Size > MaxAttachmentSize)
+                {
+                    errorMessage = $"File '{file.Name}' is too large. Maximum size per attachment is {FormatFileSize(MaxAttachmentSize)}.";
+                    continue;
+                }
+
+                await using var stream = file.OpenReadStream(MaxAttachmentSize);
+                await using var memoryStream = new MemoryStream();
+                await stream.CopyToAsync(memoryStream);
+
+                attachments.Add(new MailAttachment
+                {
+                    FileName = file.Name,
+                    ContentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType,
+                    Size = file.Size,
+                    Content = memoryStream.ToArray()
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            attachments.Clear();
+            errorMessage = ex.Message;
+        }
+    }
+
+    private void ClearAttachments()
+    {
+        attachments.Clear();
+        errorMessage = null;
+        successMessage = null;
+    }
+
     private async Task SendAsync()
     {
         errorMessage = null;
@@ -222,7 +293,7 @@ else
             foreach (var person in AppState.SelectedPeople)
             {
                 var renderedBody = message.Replace("{Name}", person.Name, StringComparison.Ordinal);
-                await GmailService.SendEmailAsync(person.Email, subject, renderedBody, isHtml);
+                await GmailService.SendEmailAsync(person.Email, subject, renderedBody, isHtml, attachments);
             }
 
             successMessage = $"Sent {AppState.SelectedPeople.Count} message(s).";
@@ -235,5 +306,20 @@ else
         {
             isSending = false;
         }
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024)
+        {
+            return $"{bytes} B";
+        }
+
+        if (bytes < 1024 * 1024)
+        {
+            return $"{bytes / 1024d:0.#} KB";
+        }
+
+        return $"{bytes / (1024d * 1024d):0.#} MB";
     }
 }
