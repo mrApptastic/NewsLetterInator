@@ -7,10 +7,15 @@ namespace NewsLetterInator.App.Services;
 
 public sealed class GmailService(HttpClient httpClient, IGoogleAuthService authService)
 {
-    public async Task SendEmailAsync(string recipient, string subject, string body, bool isHtml, IReadOnlyList<MailAttachment>? attachments = null)
+    public async Task SendEmailAsync(Person person, string subjectTemplate, string bodyTemplate, bool isHtml, IReadOnlyList<MailAttachment>? attachments = null)
     {
         var token = await authService.RequestAccessTokenAsync() ?? throw new InvalidOperationException("Google access token was not granted.");
+        var recipient = string.IsNullOrWhiteSpace(person.Email)
+            ? throw new InvalidOperationException("Recipient email is required.")
+            : person.Email.Trim();
 
+        var subject = ApplyMergeFields(subjectTemplate, person);
+        var body = ApplyMergeFields(bodyTemplate, person);
         var mimeMessage = BuildMimeMessage(recipient, subject, body, isHtml, attachments ?? []);
 
         var raw = Base64UrlEncode(Encoding.UTF8.GetBytes(mimeMessage));
@@ -26,8 +31,32 @@ public sealed class GmailService(HttpClient httpClient, IGoogleAuthService authS
         response.EnsureSuccessStatusCode();
     }
 
+    private static string ApplyMergeFields(string template, Person person)
+    {
+        var result = template ?? string.Empty;
+
+        var replacements = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Name"] = person.Name,
+            ["Email"] = person.Email,
+            ["CustomField_1"] = person.CustomField_1,
+            ["CustomField_2"] = person.CustomField_2,
+            ["CustomField_3"] = person.CustomField_3,
+            ["CustomField_4"] = person.CustomField_4,
+            ["CustomField_5"] = person.CustomField_5
+        };
+
+        foreach (var (key, value) in replacements)
+        {
+            result = result.Replace($"{{{key}}}", value ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return result;
+    }
+
     private static string BuildMimeMessage(string recipient, string subject, string body, bool isHtml, IReadOnlyList<MailAttachment> attachments)
     {
+        subject = subject.Replace("\r", " ").Replace("\n", " ");
         var bodyContentType = isHtml ? "text/html" : "text/plain";
         var message = new StringBuilder()
             .Append($"To: {recipient}\r\n")

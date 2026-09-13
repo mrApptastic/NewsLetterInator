@@ -54,6 +54,10 @@ else
         <input id="subject" class="form-control" @bind="subject" />
     </div>
 
+    <div class="alert alert-info py-2">
+        Available merge fields: <code>{Name}</code>, <code>{Email}</code>, <code>{CustomField_1}</code>, <code>{CustomField_2}</code>, <code>{CustomField_3}</code>, <code>{CustomField_4}</code>, <code>{CustomField_5}</code>
+    </div>
+
     <div class="form-check mb-3">
         <input id="isHtml" class="form-check-input" type="checkbox" @bind="isHtml" />
         <label for="isHtml" class="form-check-label">Send as HTML</label>
@@ -292,8 +296,7 @@ else
         {
             foreach (var person in AppState.SelectedPeople)
             {
-                var renderedBody = message.Replace("{Name}", person.Name, StringComparison.Ordinal);
-                await GmailService.SendEmailAsync(person.Email, subject, renderedBody, isHtml, attachments);
+                await GmailService.SendEmailAsync(person, subject, message, isHtml, attachments);
             }
 
             successMessage = $"Sent {AppState.SelectedPeople.Count} message(s).";

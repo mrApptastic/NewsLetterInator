@@ -8,6 +8,7 @@ namespace NewsLetterInator.App.Services;
 public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthService authService, IGoogleDriveService driveService)
 {
     private const string TemplateSheetName = "Templates";
+    private const string PeopleRange = "A:H";
 
     public Task<IReadOnlyList<SheetInfo>> GetSheetsAsync()
     {
@@ -53,7 +54,7 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
         var token = await authService.RequestAccessTokenAsync() ?? throw new InvalidOperationException("Google access token was not granted.");
 
         using var request = new HttpRequestMessage(HttpMethod.Get,
-            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/A:C");
+            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{PeopleRange}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
 
         using var response = await httpClient.SendAsync(request);
@@ -80,7 +81,12 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
             {
                 Name = row.Count > 0 ? row[0]?.ToString() ?? string.Empty : string.Empty,
                 Email = row.Count > 1 ? row[1]?.ToString() ?? string.Empty : string.Empty,
-                Active = row.Count > 2 && bool.TryParse(row[2]?.ToString(), out var activeValue) && activeValue
+                Active = row.Count > 2 && bool.TryParse(row[2]?.ToString(), out var activeValue) && activeValue,
+                CustomField_1 = row.Count > 3 ? row[3]?.ToString() ?? string.Empty : string.Empty,
+                CustomField_2 = row.Count > 4 ? row[4]?.ToString() ?? string.Empty : string.Empty,
+                CustomField_3 = row.Count > 5 ? row[5]?.ToString() ?? string.Empty : string.Empty,
+                CustomField_4 = row.Count > 6 ? row[6]?.ToString() ?? string.Empty : string.Empty,
+                CustomField_5 = row.Count > 7 ? row[7]?.ToString() ?? string.Empty : string.Empty
             };
 
             if (!string.IsNullOrWhiteSpace(person.Email))
@@ -104,13 +110,18 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
                 {
                     person.Name,
                     person.Email,
-                    person.Active.ToString().ToLowerInvariant()
+                    person.Active.ToString().ToLowerInvariant(),
+                    person.CustomField_1,
+                    person.CustomField_2,
+                    person.CustomField_3,
+                    person.CustomField_4,
+                    person.CustomField_5
                 }
             }
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post,
-            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/A:C:append?valueInputOption=USER_ENTERED")
+            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{PeopleRange}:append?valueInputOption=USER_ENTERED")
         {
             Content = JsonContent.Create(payload)
         };
@@ -242,12 +253,12 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
         {
             values = new[]
             {
-                new[] { "Name", "Email", "Active" }
+                new[] { "Name", "Email", "Active", "CustomField_1", "CustomField_2", "CustomField_3", "CustomField_4", "CustomField_5" }
             }
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Put,
-            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/A1:C1?valueInputOption=RAW")
+            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/A1:H1?valueInputOption=RAW")
         {
             Content = JsonContent.Create(payload)
         };
