@@ -57,10 +57,11 @@ public sealed class GmailService(HttpClient httpClient, IGoogleAuthService authS
     private static string BuildMimeMessage(string recipient, string subject, string body, bool isHtml, IReadOnlyList<MailAttachment> attachments)
     {
         subject = subject.Replace("\r", " ").Replace("\n", " ");
+        var encodedSubject = EncodeSubjectHeader(subject);
         var bodyContentType = isHtml ? "text/html" : "text/plain";
         var message = new StringBuilder()
             .Append($"To: {recipient}\r\n")
-            .Append($"Subject: {subject}\r\n")
+            .Append($"Subject: {encodedSubject}\r\n")
             .Append("MIME-Version: 1.0\r\n");
 
         if (attachments.Count == 0)
@@ -105,6 +106,23 @@ public sealed class GmailService(HttpClient httpClient, IGoogleAuthService authS
         message.Append($"--{mixedBoundary}--");
 
         return message.ToString();
+    }
+
+    private static string EncodeSubjectHeader(string subject)
+    {
+        if (string.IsNullOrEmpty(subject) || IsAscii(subject))
+        {
+            return subject;
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(subject);
+        var base64 = Convert.ToBase64String(bytes);
+        return $"=?UTF-8?B?{base64}?=";
+    }
+
+    private static bool IsAscii(string text)
+    {
+        return text.All(c => c <= 127);
     }
 
     private static string Base64UrlEncode(byte[] input)
