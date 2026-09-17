@@ -131,6 +131,71 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task UpdatePersonAsync(string spreadsheetId, Person originalPerson, Person updatedPerson)
+    {
+        var token = await authService.RequestAccessTokenAsync() ?? throw new InvalidOperationException("Google access token was not granted.");
+
+        using var readRequest = new HttpRequestMessage(HttpMethod.Get,
+            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{PeopleRange}");
+        readRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
+
+        using var readResponse = await httpClient.SendAsync(readRequest);
+        readResponse.EnsureSuccessStatusCode();
+
+        var payload = await readResponse.Content.ReadFromJsonAsync<ValuesResponse>();
+        var rows = payload?.Values ?? [];
+
+        var rowIndex = -1;
+        for (var i = 1; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            if (row.Count == 0)
+            {
+                continue;
+            }
+
+            var email = row.Count > 1 ? row[1]?.ToString() ?? string.Empty : string.Empty;
+            var name = row.Count > 0 ? row[0]?.ToString() ?? string.Empty : string.Empty;
+
+            if (string.Equals(email, originalPerson.Email, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(name, originalPerson.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                rowIndex = i + 1;
+                break;
+            }
+        }
+
+        if (rowIndex <= 0)
+        {
+            throw new InvalidOperationException("Person row could not be found in the sheet.");
+        }
+
+        var values = new[]
+        {
+            new[]
+            {
+                updatedPerson.Name,
+                updatedPerson.Email,
+                updatedPerson.Active.ToString().ToLowerInvariant(),
+                updatedPerson.CustomField_1,
+                updatedPerson.CustomField_2,
+                updatedPerson.CustomField_3,
+                updatedPerson.CustomField_4,
+                updatedPerson.CustomField_5
+            }
+        };
+
+        using var writeRequest = new HttpRequestMessage(HttpMethod.Put,
+            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"A{rowIndex}:H{rowIndex}")}?valueInputOption=USER_ENTERED")
+        {
+            Content = JsonContent.Create(new { values })
+        };
+        writeRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
+
+        using var writeResponse = await httpClient.SendAsync(writeRequest);
+        writeResponse.EnsureSuccessStatusCode();
+    }
+
     public async Task<IReadOnlyList<MailTemplate>> GetMailTemplatesAsync(string spreadsheetId)
     {
         var token = await authService.RequestAccessTokenAsync() ?? throw new InvalidOperationException("Google access token was not granted.");

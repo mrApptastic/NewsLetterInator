@@ -47,16 +47,82 @@ else
         <ul class="list-group mb-4">
             @foreach (var person in people)
             {
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                    <label class="d-flex align-items-center gap-2 w-100" style="cursor:pointer;">
-                        <input type="checkbox" class="form-check-input" checked="@AppState.IsPersonSelected(person.Email)"
-                               @onchange="args => ToggleSelection(person, args)" />
-                        <span>@(person.Active ? "☑" : "☐") @person.Name</span>
-                        <span class="text-muted">@person.Email</span>
-                    </label>
+                <li class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-center gap-3">
+                        <label class="d-flex align-items-center gap-2 flex-grow-1" style="cursor:pointer;">
+                            <input type="checkbox" class="form-check-input" checked="@AppState.IsPersonSelected(person.Email)"
+                                   disabled="@(!person.Active)" @onchange="args => ToggleSelection(person, args)" />
+                            <span class="@(person.Active ? "" : "text-muted")">@(person.Active ? "☑" : "☐") @person.Name</span>
+                            <span class="text-muted">@person.Email</span>
+                        </label>
+
+                        <div class="d-flex align-items-center gap-2">
+                            <label class="form-check-label small text-nowrap">
+                                <input type="checkbox" class="form-check-input me-1" checked="@person.Active" @onchange="args => TogglePersonActiveAsync(person, args)" />
+                                Active
+                            </label>
+                            <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenEditDialog(person)">Edit</button>
+                        </div>
+                    </div>
                 </li>
             }
         </ul>
+    }
+
+    @if (editingPerson is not null)
+    {
+        <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.45);">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Edit person</h5>
+                        <button type="button" class="btn-close" @onclick="CloseEditDialog"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Name</label>
+                                <input class="form-control" @bind="editingPerson.Name" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Email</label>
+                                <input class="form-control" @bind="editingPerson.Email" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-check-label">
+                                    <input type="checkbox" class="form-check-input me-1" @bind="editingPerson.Active" />
+                                    Active
+                                </label>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Custom field 1</label>
+                                <input class="form-control" @bind="editingPerson.CustomField_1" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Custom field 2</label>
+                                <input class="form-control" @bind="editingPerson.CustomField_2" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Custom field 3</label>
+                                <input class="form-control" @bind="editingPerson.CustomField_3" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Custom field 4</label>
+                                <input class="form-control" @bind="editingPerson.CustomField_4" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Custom field 5</label>
+                                <input class="form-control" @bind="editingPerson.CustomField_5" />
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" @onclick="CloseEditDialog">Cancel</button>
+                        <button class="btn btn-primary" @onclick="SaveEditedPersonAsync" disabled="@isLoading">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     }
 
     <h2>Add person</h2>
@@ -96,6 +162,8 @@ else
 @code {
     private readonly List<Person> people = [];
     private Person newPerson = new();
+    private Person? editingPerson;
+    private Person? originalEditingPerson;
     private bool isLoading;
     private bool checkAll = false;
     private string? errorMessage;
@@ -121,6 +189,7 @@ else
         {
             people.Clear();
             people.AddRange(await GoogleSheetsService.GetPeopleAsync(AppState.SelectedSheet.Id));
+            RefreshSelectAllState();
         }
         catch (Exception ex)
         {
@@ -167,10 +236,131 @@ else
         }
     }
 
+    private void OpenEditDialog(Person person)
+    {
+        originalEditingPerson = person;
+        editingPerson = new Person
+        {
+            Name = person.Name,
+            Email = person.Email,
+            Active = person.Active,
+            CustomField_1 = person.CustomField_1,
+            CustomField_2 = person.CustomField_2,
+            CustomField_3 = person.CustomField_3,
+            CustomField_4 = person.CustomField_4,
+            CustomField_5 = person.CustomField_5
+        };
+    }
+
+    private void CloseEditDialog()
+    {
+        editingPerson = null;
+        originalEditingPerson = null;
+    }
+
+    private async Task SaveEditedPersonAsync()
+    {
+        if (editingPerson is null || originalEditingPerson is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(editingPerson.Name) || string.IsNullOrWhiteSpace(editingPerson.Email))
+        {
+            errorMessage = "Name and email are required.";
+            return;
+        }
+
+        if (AppState.SelectedSheet is null)
+        {
+            errorMessage = "No sheet selected.";
+            return;
+        }
+
+        var wasSelected = AppState.IsPersonSelected(originalEditingPerson.Email);
+        AppState.SetPersonSelected(originalEditingPerson, false);
+
+        try
+        {
+            isLoading = true;
+            await GoogleSheetsService.UpdatePersonAsync(AppState.SelectedSheet.Id, originalEditingPerson, editingPerson);
+            if (editingPerson.Active && wasSelected)
+            {
+                AppState.SetPersonSelected(editingPerson, true);
+            }
+
+            successMessage = $"Saved changes for {editingPerson.Name}.";
+            CloseEditDialog();
+            await LoadPeopleAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task TogglePersonActiveAsync(Person person, ChangeEventArgs args)
+    {
+        var isActive = args.Value is bool b && b;
+        var wasSelected = AppState.IsPersonSelected(person.Email);
+
+        var updatedPerson = new Person
+        {
+            Name = person.Name,
+            Email = person.Email,
+            Active = isActive,
+            CustomField_1 = person.CustomField_1,
+            CustomField_2 = person.CustomField_2,
+            CustomField_3 = person.CustomField_3,
+            CustomField_4 = person.CustomField_4,
+            CustomField_5 = person.CustomField_5
+        };
+
+        if (AppState.SelectedSheet is null)
+        {
+            return;
+        }
+
+        try
+        {
+            isLoading = true;
+            await GoogleSheetsService.UpdatePersonAsync(AppState.SelectedSheet.Id, person, updatedPerson);
+            AppState.SetPersonSelected(person, false);
+            if (wasSelected && isActive)
+            {
+                AppState.SetPersonSelected(updatedPerson, true);
+            }
+
+            person.Active = isActive;
+            RefreshSelectAllState();
+            await LoadPeopleAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
     private void ToggleSelection(Person person, ChangeEventArgs args)
     {
         var isSelected = args.Value is bool b && b;
+        if (!person.Active)
+        {
+            AppState.SetPersonSelected(person, false);
+            RefreshSelectAllState();
+            return;
+        }
+
         AppState.SetPersonSelected(person, isSelected);
+        RefreshSelectAllState();
     }
 
     private void ToggleSelectAll(ChangeEventArgs args)
@@ -178,7 +368,21 @@ else
         checkAll = args.Value is bool b && b;
         foreach (var person in people)
         {
+            if (!person.Active)
+            {
+                AppState.SetPersonSelected(person, false);
+                continue;
+            }
+
             AppState.SetPersonSelected(person, checkAll);
         }
+
+        RefreshSelectAllState();
+    }
+
+    private void RefreshSelectAllState()
+    {
+        var activePeople = people.Where(person => person.Active).ToList();
+        checkAll = activePeople.Count > 0 && activePeople.All(person => AppState.IsPersonSelected(person.Email));
     }
 }

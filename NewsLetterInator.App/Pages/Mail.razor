@@ -18,9 +18,26 @@ else
     <p class="text-muted">Sheet: <strong>@AppState.SelectedSheet.Name</strong></p>
     <p>Selected recipients: <strong>@AppState.SelectedPeople.Count</strong></p>
 
-    @if (AppState.SelectedPeople.Count == 0)
+    @if (AppState.SelectedPeople.Count > 0)
     {
-        <p>Go to People and select at least one recipient.</p>
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Recipients</h5>
+                <ul class="list-group list-group-flush">
+                    @foreach (var recipient in AppState.SelectedPeople)
+                    {
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>@recipient.Name</span>
+                            <small class="text-muted">@recipient.Email</small>
+                        </li>
+                    }
+                </ul>
+            </div>
+        </div>
+    }
+    else
+    {
+        <p>Go to People and select at least one active recipient.</p>
     }
 
     <div class="card p-3 mb-3">
@@ -96,6 +113,26 @@ else
 
     <button class="btn btn-primary" @onclick="SendAsync" disabled="@(isSending || AppState.SelectedPeople.Count == 0)">Send</button>
 
+    @if (isSending)
+    {
+        <div class="alert alert-warning mt-3">
+            Sending mail@(string.IsNullOrWhiteSpace(currentRecipientEmail) ? string.Empty : $" to {currentRecipientEmail}")...
+        </div>
+    }
+
+    @if (sentRecipients.Count > 0)
+    {
+        <div class="mt-3">
+            <strong>Sent:</strong>
+            <ul class="mb-0 mt-2">
+                @foreach (var sentRecipient in sentRecipients)
+                {
+                    <li>@sentRecipient</li>
+                }
+            </ul>
+        </div>
+    }
+
     @if (!string.IsNullOrWhiteSpace(errorMessage))
     {
         <div class="alert alert-danger mt-3">@errorMessage</div>
@@ -112,13 +149,16 @@ else
     private string message = "Hej {Name},\n\nDette er en testmail fra vores POC.";
     private bool isHtml;
     private bool isSending;
+    private string? currentRecipientEmail;
     private string? errorMessage;
     private string? successMessage;
     private string templateName = "Default";
     private string selectedTemplateName = string.Empty;
     private readonly List<MailTemplate> templates = [];
     private readonly List<MailAttachment> attachments = [];
+    private readonly List<string> sentRecipients = [];
     private const long MaxAttachmentSize = 10 * 1024 * 1024;
+    private static readonly TimeSpan SendDelay = TimeSpan.FromSeconds(1);
 
     protected override async Task OnInitializedAsync()
     {
@@ -284,22 +324,36 @@ else
             return;
         }
 
-        if (AppState.SelectedPeople.Count == 0)
+        var recipients = AppState.SelectedPeople.ToList();
+        if (recipients.Count == 0)
         {
-            errorMessage = "No recipients selected.";
+            errorMessage = "No active recipients selected.";
             return;
         }
 
         isSending = true;
+        sentRecipients.Clear();
+        currentRecipientEmail = null;
 
         try
         {
-            foreach (var person in AppState.SelectedPeople)
+            for (var index = 0; index < recipients.Count; index++)
             {
+                var person = recipients[index];
+                currentRecipientEmail = person.Email;
+                StateHasChanged();
+
                 await GmailService.SendEmailAsync(person, subject, message, isHtml, attachments);
+                sentRecipients.Add($"{person.Name} <{person.Email}>");
+                StateHasChanged();
+
+                if (index < recipients.Count - 1)
+                {
+                    await Task.Delay(SendDelay);
+                }
             }
 
-            successMessage = $"Sent {AppState.SelectedPeople.Count} message(s).";
+            successMessage = $"Sent {recipients.Count} message(s).";
         }
         catch (Exception ex)
         {
@@ -308,6 +362,8 @@ else
         finally
         {
             isSending = false;
+            currentRecipientEmail = null;
+            StateHasChanged();
         }
     }
 

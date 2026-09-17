@@ -10,7 +10,7 @@ public sealed class AppState
 
     public SheetInfo? SelectedSheet { get; private set; }
 
-    public IReadOnlyList<Person> SelectedPeople => selectedPeopleByEmail.Values.ToList();
+    public IReadOnlyList<Person> SelectedPeople => selectedPeopleByEmail.Values.Where(person => person.Active).ToList();
 
     public void SetSelectedSheet(SheetInfo? sheet)
     {
@@ -27,6 +27,13 @@ public sealed class AppState
     {
         if (string.IsNullOrWhiteSpace(person.Email))
         {
+            return;
+        }
+
+        if (!person.Active)
+        {
+            selectedPeopleByEmail.Remove(person.Email);
+            Changed?.Invoke();
             return;
         }
 
