@@ -223,14 +223,7 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
 
         await EnsureTemplateSheetSetupAsync(spreadsheetId, token.AccessToken);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get,
-            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"'{TemplateSheetName}'!A:E")}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
-
-        using var response = await httpClient.SendAsync(request);
-        response.EnsureSuccessStatusCode();
-
-        var payload = await response.Content.ReadFromJsonAsync<ValuesResponse>();
+        var payload = await ReadTemplateValuesAsync(spreadsheetId, token.AccessToken);
         var rows = payload?.Values ?? [];
 
         if (rows.Count <= 1)
@@ -276,14 +269,7 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
 
         await EnsureTemplateSheetSetupAsync(spreadsheetId, token.AccessToken);
 
-        using var readRequest = new HttpRequestMessage(HttpMethod.Get,
-            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"'{TemplateSheetName}'!A:E")}");
-        readRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
-
-        using var readResponse = await httpClient.SendAsync(readRequest);
-        readResponse.EnsureSuccessStatusCode();
-
-        var existingPayload = await readResponse.Content.ReadFromJsonAsync<ValuesResponse>();
+        var existingPayload = await ReadTemplateValuesAsync(spreadsheetId, token.AccessToken);
         var rows = existingPayload?.Values ?? [];
 
         var values = new[]
@@ -464,5 +450,33 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Distinct(StringComparer.Ordinal)
             .ToList();
+    }
+
+    private async Task<ValuesResponse?> ReadTemplateValuesAsync(string spreadsheetId, string accessToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"'{TemplateSheetName}'!A:E")}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        using var response = await httpClient.SendAsync(request);
+        if (response.IsSuccessStatusCode)
+        {
+            return await response.Content.ReadFromJsonAsync<ValuesResponse>();
+        }
+
+        var content = await response.Content.ReadAsStringAsync();
+        if (!content.Contains("Unable to parse range", StringComparison.OrdinalIgnoreCase) &&
+            !content.Contains("Requested writing within range", StringComparison.OrdinalIgnoreCase))
+        {
+            response.EnsureSuccessStatusCode();
+        }
+
+        using var fallbackRequest = new HttpRequestMessage(HttpMethod.Get,
+            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"'{TemplateSheetName}'!A:D")}");
+        fallbackRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        using var fallbackResponse = await httpClient.SendAsync(fallbackRequest);
+        fallbackResponse.EnsureSuccessStatusCode();
+        return await fallbackResponse.Content.ReadFromJsonAsync<ValuesResponse>();
     }
 }

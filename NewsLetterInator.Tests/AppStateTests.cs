@@ -28,4 +28,30 @@ public class AppStateTests
         Assert.Single(state.SelectedPeople);
         Assert.Equal("active@example.com", state.SelectedPeople[0].Email);
     }
+
+    [Fact]
+    public void SetSelectedSheet_RaisesChangedEvent()
+    {
+        var state = new AppState();
+        var changedEventRaised = false;
+        state.Changed += () => changedEventRaised = true;
+
+        state.SetSelectedSheet(new SheetInfo { Id = "sheet-1", Name = "People" });
+
+        Assert.True(changedEventRaised);
+    }
+
+    [Fact]
+    public void ClearSelectedPeople_RaisesChangedEvent()
+    {
+        var state = new AppState();
+        var changedEventRaised = false;
+        state.Changed += () => changedEventRaised = true;
+        state.SetPersonSelected(new Person { Name = "Active", Email = "active@example.com", Active = true }, true);
+
+        changedEventRaised = false;
+        state.ClearSelectedPeople();
+
+        Assert.True(changedEventRaised);
+    }
 }

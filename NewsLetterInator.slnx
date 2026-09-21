@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="NewsLetterInator.App/NewsLetterInator.App.csproj" />
   <Project Path="NewsLetterInator.Shared/NewsLetterInator.Shared.csproj" />
+  <Project Path="NewsLetterInator.Tests/NewsLetterInator.Tests.csproj" />
 </Solution>
