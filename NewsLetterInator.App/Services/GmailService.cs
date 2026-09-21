@@ -14,8 +14,8 @@ public sealed class GmailService(HttpClient httpClient, IGoogleAuthService authS
             ? throw new InvalidOperationException("Recipient email is required.")
             : person.Email.Trim();
 
-        var subject = ApplyMergeFields(subjectTemplate, person);
-        var body = ApplyMergeFields(bodyTemplate, person);
+        var subject = RenderTemplate(subjectTemplate, person);
+        var body = RenderTemplate(bodyTemplate, person);
         var mimeMessage = BuildMimeMessage(recipient, subject, body, isHtml, attachments ?? []);
 
         var raw = Base64UrlEncode(Encoding.UTF8.GetBytes(mimeMessage));
@@ -31,7 +31,7 @@ public sealed class GmailService(HttpClient httpClient, IGoogleAuthService authS
         response.EnsureSuccessStatusCode();
     }
 
-    private static string ApplyMergeFields(string template, Person person)
+    public static string RenderTemplate(string template, Person person)
     {
         var result = template ?? string.Empty;
 
@@ -43,7 +43,12 @@ public sealed class GmailService(HttpClient httpClient, IGoogleAuthService authS
             ["CustomField_2"] = person.CustomField_2,
             ["CustomField_3"] = person.CustomField_3,
             ["CustomField_4"] = person.CustomField_4,
-            ["CustomField_5"] = person.CustomField_5
+            ["CustomField_5"] = person.CustomField_5,
+            ["CustomField_6"] = person.CustomField_6,
+            ["CustomField_7"] = person.CustomField_7,
+            ["CustomField_8"] = person.CustomField_8,
+            ["CustomField_9"] = person.CustomField_9,
+            ["CustomField_10"] = person.CustomField_10
         };
 
         foreach (var (key, value) in replacements)

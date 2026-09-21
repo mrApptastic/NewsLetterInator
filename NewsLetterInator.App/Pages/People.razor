@@ -114,6 +114,26 @@ else
                                 <label class="form-label">Custom field 5</label>
                                 <input class="form-control" @bind="editingPerson.CustomField_5" />
                             </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Custom field 6</label>
+                                <input class="form-control" @bind="editingPerson.CustomField_6" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Custom field 7</label>
+                                <input class="form-control" @bind="editingPerson.CustomField_7" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Custom field 8</label>
+                                <input class="form-control" @bind="editingPerson.CustomField_8" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Custom field 9</label>
+                                <input class="form-control" @bind="editingPerson.CustomField_9" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Custom field 10</label>
+                                <input class="form-control" @bind="editingPerson.CustomField_10" />
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -152,6 +172,21 @@ else
         </div>
         <div class="col-12 col-md-4">
             <input class="form-control" @bind="newPerson.CustomField_5" placeholder="Custom field 5" />
+        </div>
+        <div class="col-12 col-md-4">
+            <input class="form-control" @bind="newPerson.CustomField_6" placeholder="Custom field 6" />
+        </div>
+        <div class="col-12 col-md-4">
+            <input class="form-control" @bind="newPerson.CustomField_7" placeholder="Custom field 7" />
+        </div>
+        <div class="col-12 col-md-4">
+            <input class="form-control" @bind="newPerson.CustomField_8" placeholder="Custom field 8" />
+        </div>
+        <div class="col-12 col-md-4">
+            <input class="form-control" @bind="newPerson.CustomField_9" placeholder="Custom field 9" />
+        </div>
+        <div class="col-12 col-md-4">
+            <input class="form-control" @bind="newPerson.CustomField_10" placeholder="Custom field 10" />
         </div>
         <div class="col-12 col-md-4 d-flex align-items-end">
             <button class="btn btn-secondary w-100" @onclick="AddPersonAsync" disabled="@isLoading">Add person</button>
@@ -248,7 +283,12 @@ else
             CustomField_2 = person.CustomField_2,
             CustomField_3 = person.CustomField_3,
             CustomField_4 = person.CustomField_4,
-            CustomField_5 = person.CustomField_5
+            CustomField_5 = person.CustomField_5,
+            CustomField_6 = person.CustomField_6,
+            CustomField_7 = person.CustomField_7,
+            CustomField_8 = person.CustomField_8,
+            CustomField_9 = person.CustomField_9,
+            CustomField_10 = person.CustomField_10
         };
     }
 

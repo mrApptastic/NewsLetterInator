@@ -9,4 +9,6 @@ public sealed class MailTemplate
     public string Body { get; set; } = string.Empty;
 
     public bool IsHtml { get; set; }
+
+    public List<string> AttachmentFileIds { get; set; } = [];
 }

@@ -10,5 +10,10 @@ public sealed class Person
     public string CustomField_3 { get; set; } = string.Empty;
     public string CustomField_4 { get; set; } = string.Empty;
     public string CustomField_5 { get; set; } = string.Empty;
+    public string CustomField_6 { get; set; } = string.Empty;
+    public string CustomField_7 { get; set; } = string.Empty;
+    public string CustomField_8 { get; set; } = string.Empty;
+    public string CustomField_9 { get; set; } = string.Empty;
+    public string CustomField_10 { get; set; } = string.Empty;
     public bool Active { get; set; } = true;
 }

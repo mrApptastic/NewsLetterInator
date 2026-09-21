@@ -44,7 +44,7 @@ else
                     <strong>@sheet.Name</strong>
                     <div class="text-muted small">@sheet.Id</div>
                 </div>
-                <button class="btn btn-outline-primary btn-sm" @onclick="() => SelectSheet(sheet)">
+                <button class="btn btn-outline-primary btn-sm" @onclick="() => SelectSheetAsync(sheet)">
                     @(AppState.SelectedSheet?.Id == sheet.Id ? "Selected" : "Select")
                 </button>
             </li>
@@ -76,7 +76,7 @@ else
             sheets.AddRange(await GoogleSheetsService.GetSheetsAsync());
             
             if (sheets.Count > 0) {
-                SelectSheet(sheets[0]);
+                await SelectSheetAsync(sheets[0]);
             }
         }
         catch (Exception ex)
@@ -113,11 +113,19 @@ else
         }
     }
 
-    private void SelectSheet(SheetInfo sheet)
+    private async Task SelectSheetAsync(SheetInfo sheet)
     {
-        AppState.SetSelectedSheet(sheet);
-        AppState.ClearSelectedPeople();
-        successMessage = $"Selected sheet '{sheet.Name}'.";
-        errorMessage = null;
+        try
+        {
+            await GoogleSheetsService.MarkSheetAsUsedAsync(sheet.Id);
+            AppState.SetSelectedSheet(sheet);
+            AppState.ClearSelectedPeople();
+            successMessage = $"Selected sheet '{sheet.Name}'.";
+            errorMessage = null;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
     }
 }

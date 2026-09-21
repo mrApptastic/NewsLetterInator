@@ -1,7 +1,8 @@
 @page "/mail"
 
-@inject GmailService GmailService
+@inject GmailService GmailSender
 @inject GoogleSheetsService GoogleSheetsService
+@inject IGoogleDriveService GoogleDriveService
 @inject AppState AppState
 @implements IDisposable
 
@@ -72,7 +73,7 @@ else
     </div>
 
     <div class="alert alert-info py-2">
-        Available merge fields: <code>{Name}</code>, <code>{Email}</code>, <code>{CustomField_1}</code>, <code>{CustomField_2}</code>, <code>{CustomField_3}</code>, <code>{CustomField_4}</code>, <code>{CustomField_5}</code>
+        Available merge fields: <code>{Name}</code>, <code>{Email}</code>, <code>{CustomField_1}</code>, <code>{CustomField_2}</code>, <code>{CustomField_3}</code>, <code>{CustomField_4}</code>, <code>{CustomField_5}</code>, <code>{CustomField_6}</code>, <code>{CustomField_7}</code>, <code>{CustomField_8}</code>, <code>{CustomField_9}</code>, <code>{CustomField_10}</code>
     </div>
 
     <div class="form-check mb-3">
@@ -88,8 +89,44 @@ else
     <div class="mb-3">
         <label for="attachments" class="form-label">Attachments</label>
         <InputFile id="attachments" class="form-control" OnChange="HandleAttachmentsSelected" multiple />
-        <div class="form-text">Attachments are sent with the email and are not stored in templates.</div>
+        <div class="form-text">When you save a template, selected attachments are uploaded to Drive and linked to the template for reuse.</div>
     </div>
+
+    @if (AppState.SelectedPeople.Count > 0)
+    {
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Preview</h5>
+                <div class="row g-2 align-items-end mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label" for="previewRecipient">Preview recipient</label>
+                        <select id="previewRecipient" class="form-select" @bind="selectedPreviewRecipientEmail">
+                            @foreach (var recipient in AppState.SelectedPeople)
+                            {
+                                <option value="@recipient.Email">@recipient.Name (@recipient.Email)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-6 text-md-end">
+                        <span class="text-muted">Type: @(isHtml ? "HTML" : "Plain text")</span>
+                    </div>
+                </div>
+
+                <div class="mb-2"><strong>Subject preview</strong></div>
+                <div class="border rounded p-2 mb-3">@GetPreviewSubject()</div>
+
+                <div class="mb-2"><strong>Body preview</strong></div>
+                @if (isHtml)
+                {
+                    <div class="border rounded p-3 bg-white">@((MarkupString)GetPreviewBody())</div>
+                }
+                else
+                {
+                    <pre class="border rounded p-3 bg-light mb-0" style="white-space: pre-wrap;">@GetPreviewBody()</pre>
+                }
+            </div>
+        </div>
+    }
 
     @if (attachments.Count > 0)
     {
@@ -104,7 +141,7 @@ else
                 {
                     <li class="list-group-item d-flex justify-content-between align-items-center">
                         <span>@attachment.FileName</span>
-                        <small class="text-muted">@FormatFileSize(attachment.Size)</small>
+                        <small class="text-muted">@GetAttachmentInfo(attachment)</small>
                     </li>
                 }
             </ul>
@@ -157,6 +194,7 @@ else
     private readonly List<MailTemplate> templates = [];
     private readonly List<MailAttachment> attachments = [];
     private readonly List<string> sentRecipients = [];
+    private string selectedPreviewRecipientEmail = string.Empty;
     private const long MaxAttachmentSize = 10 * 1024 * 1024;
     private static readonly TimeSpan SendDelay = TimeSpan.FromSeconds(1);
 
@@ -173,6 +211,7 @@ else
 
     private void OnAppStateChanged()
     {
+        EnsurePreviewRecipient();
         _ = InvokeAsync(LoadTemplatesForCurrentSheetAsync);
     }
 
@@ -194,6 +233,8 @@ else
             {
                 selectedTemplateName = string.Empty;
             }
+
+            EnsurePreviewRecipient();
         }
         catch
         {
@@ -227,13 +268,35 @@ else
         isSending = true;
         try
         {
+            var templateAttachments = new List<MailAttachment>();
+            foreach (var attachment in attachments)
+            {
+                if (attachment.IsStoredOnDrive && !string.IsNullOrWhiteSpace(attachment.DriveFileId))
+                {
+                    templateAttachments.Add(attachment);
+                    continue;
+                }
+
+                var uploaded = await GoogleDriveService.UploadTemplateAttachmentAsync(AppState.SelectedSheet.Id, templateName, attachment);
+                templateAttachments.Add(uploaded);
+            }
+
             await GoogleSheetsService.SaveMailTemplateAsync(AppState.SelectedSheet.Id, new MailTemplate
             {
                 Name = templateName,
                 Subject = subject,
                 Body = message,
-                IsHtml = isHtml
+                IsHtml = isHtml,
+                AttachmentFileIds = templateAttachments
+                    .Select(x => x.DriveFileId)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Select(x => x!)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList()
             });
+
+            attachments.Clear();
+            attachments.AddRange(templateAttachments);
 
             await LoadTemplatesForCurrentSheetAsync();
             selectedTemplateName = templateName;
@@ -249,7 +312,7 @@ else
         }
     }
 
-    private Task LoadTemplateAsync()
+    private async Task LoadTemplateAsync()
     {
         errorMessage = null;
         successMessage = null;
@@ -258,16 +321,29 @@ else
         if (selected is null)
         {
             errorMessage = "Select a template to load.";
-            return Task.CompletedTask;
+            return;
         }
 
         templateName = selected.Name;
         subject = selected.Subject;
         message = selected.Body;
         isHtml = selected.IsHtml;
-        successMessage = $"Template '{selected.Name}' loaded.";
 
-        return Task.CompletedTask;
+        attachments.Clear();
+        foreach (var fileId in selected.AttachmentFileIds.Distinct(StringComparer.Ordinal))
+        {
+            try
+            {
+                attachments.Add(await GoogleDriveService.GetAttachmentAsync(fileId, includeContent: false));
+            }
+            catch
+            {
+                // Ignore missing/inaccessible attachments and keep loading the rest of the template.
+            }
+        }
+
+        EnsurePreviewRecipient();
+        successMessage = $"Template '{selected.Name}' loaded.";
     }
 
     private async Task HandleAttachmentsSelected(InputFileChangeEventArgs e)
@@ -295,6 +371,7 @@ else
                     FileName = file.Name,
                     ContentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType,
                     Size = file.Size,
+                    IsStoredOnDrive = false,
                     Content = memoryStream.ToArray()
                 });
             }
@@ -337,13 +414,15 @@ else
 
         try
         {
+            var attachmentsToSend = await ResolveAttachmentsForSendingAsync();
+
             for (var index = 0; index < recipients.Count; index++)
             {
                 var person = recipients[index];
                 currentRecipientEmail = person.Email;
                 StateHasChanged();
 
-                await GmailService.SendEmailAsync(person, subject, message, isHtml, attachments);
+                await GmailSender.SendEmailAsync(person, subject, message, isHtml, attachmentsToSend);
                 sentRecipients.Add($"{person.Name} <{person.Email}>");
                 StateHasChanged();
 
@@ -364,6 +443,69 @@ else
             isSending = false;
             currentRecipientEmail = null;
             StateHasChanged();
+        }
+    }
+
+    private async Task<List<MailAttachment>> ResolveAttachmentsForSendingAsync()
+    {
+        var resolved = new List<MailAttachment>(attachments.Count);
+
+        foreach (var attachment in attachments)
+        {
+            if (attachment.IsStoredOnDrive && !string.IsNullOrWhiteSpace(attachment.DriveFileId))
+            {
+                resolved.Add(await GoogleDriveService.GetAttachmentAsync(attachment.DriveFileId, includeContent: true));
+                continue;
+            }
+
+            resolved.Add(attachment);
+        }
+
+        return resolved;
+    }
+
+    private string GetAttachmentInfo(MailAttachment attachment)
+    {
+        var source = attachment.IsStoredOnDrive ? "Drive" : "Local";
+        return $"{source} - {FormatFileSize(attachment.Size)}";
+    }
+
+    private Person? GetPreviewRecipient()
+    {
+        EnsurePreviewRecipient();
+        if (string.IsNullOrWhiteSpace(selectedPreviewRecipientEmail))
+        {
+            return null;
+        }
+
+        return AppState.SelectedPeople.FirstOrDefault(person =>
+            string.Equals(person.Email, selectedPreviewRecipientEmail, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private string GetPreviewSubject()
+    {
+        var recipient = GetPreviewRecipient();
+        return recipient is null ? subject : GmailService.RenderTemplate(subject, recipient);
+    }
+
+    private string GetPreviewBody()
+    {
+        var recipient = GetPreviewRecipient();
+        return recipient is null ? message : GmailService.RenderTemplate(message, recipient);
+    }
+
+    private void EnsurePreviewRecipient()
+    {
+        if (AppState.SelectedPeople.Count == 0)
+        {
+            selectedPreviewRecipientEmail = string.Empty;
+            return;
+        }
+
+        if (!AppState.SelectedPeople.Any(person =>
+                string.Equals(person.Email, selectedPreviewRecipientEmail, StringComparison.OrdinalIgnoreCase)))
+        {
+            selectedPreviewRecipientEmail = AppState.SelectedPeople[0].Email;
         }
     }
 

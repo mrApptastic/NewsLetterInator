@@ -8,11 +8,16 @@ namespace NewsLetterInator.App.Services;
 public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthService authService, IGoogleDriveService driveService)
 {
     private const string TemplateSheetName = "Templates";
-    private const string PeopleRange = "A:H";
+    private const string PeopleRange = "A:M";
 
     public Task<IReadOnlyList<SheetInfo>> GetSheetsAsync()
     {
         return driveService.GetSheetsAsync();
+    }
+
+    public Task MarkSheetAsUsedAsync(string spreadsheetId)
+    {
+        return driveService.EnsureSheetInAppFolderAsync(spreadsheetId);
     }
 
     public async Task<SheetInfo> CreateSheetAsync(string name)
@@ -39,6 +44,7 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
         var created = await createResponse.Content.ReadFromJsonAsync<CreateSpreadsheetResponse>()
             ?? throw new InvalidOperationException("Failed to parse create spreadsheet response.");
 
+        await driveService.EnsureSheetInAppFolderAsync(created.SpreadsheetId);
         await AddHeaderRowAsync(created.SpreadsheetId, token.AccessToken);
         await EnsureTemplateSheetSetupAsync(created.SpreadsheetId, token.AccessToken);
 
@@ -86,7 +92,12 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
                 CustomField_2 = row.Count > 4 ? row[4]?.ToString() ?? string.Empty : string.Empty,
                 CustomField_3 = row.Count > 5 ? row[5]?.ToString() ?? string.Empty : string.Empty,
                 CustomField_4 = row.Count > 6 ? row[6]?.ToString() ?? string.Empty : string.Empty,
-                CustomField_5 = row.Count > 7 ? row[7]?.ToString() ?? string.Empty : string.Empty
+                CustomField_5 = row.Count > 7 ? row[7]?.ToString() ?? string.Empty : string.Empty,
+                CustomField_6 = row.Count > 8 ? row[8]?.ToString() ?? string.Empty : string.Empty,
+                CustomField_7 = row.Count > 9 ? row[9]?.ToString() ?? string.Empty : string.Empty,
+                CustomField_8 = row.Count > 10 ? row[10]?.ToString() ?? string.Empty : string.Empty,
+                CustomField_9 = row.Count > 11 ? row[11]?.ToString() ?? string.Empty : string.Empty,
+                CustomField_10 = row.Count > 12 ? row[12]?.ToString() ?? string.Empty : string.Empty
             };
 
             if (!string.IsNullOrWhiteSpace(person.Email))
@@ -115,7 +126,12 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
                     person.CustomField_2,
                     person.CustomField_3,
                     person.CustomField_4,
-                    person.CustomField_5
+                    person.CustomField_5,
+                    person.CustomField_6,
+                    person.CustomField_7,
+                    person.CustomField_8,
+                    person.CustomField_9,
+                    person.CustomField_10
                 }
             }
         };
@@ -181,12 +197,17 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
                 updatedPerson.CustomField_2,
                 updatedPerson.CustomField_3,
                 updatedPerson.CustomField_4,
-                updatedPerson.CustomField_5
+                updatedPerson.CustomField_5,
+                updatedPerson.CustomField_6,
+                updatedPerson.CustomField_7,
+                updatedPerson.CustomField_8,
+                updatedPerson.CustomField_9,
+                updatedPerson.CustomField_10
             }
         };
 
         using var writeRequest = new HttpRequestMessage(HttpMethod.Put,
-            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"A{rowIndex}:H{rowIndex}")}?valueInputOption=USER_ENTERED")
+            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"A{rowIndex}:M{rowIndex}")}?valueInputOption=USER_ENTERED")
         {
             Content = JsonContent.Create(new { values })
         };
@@ -203,7 +224,7 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
         await EnsureTemplateSheetSetupAsync(spreadsheetId, token.AccessToken);
 
         using var request = new HttpRequestMessage(HttpMethod.Get,
-            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"'{TemplateSheetName}'!A:D")}");
+            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"'{TemplateSheetName}'!A:E")}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
 
         using var response = await httpClient.SendAsync(request);
@@ -231,7 +252,8 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
                 Name = row.Count > 0 ? row[0]?.ToString() ?? string.Empty : string.Empty,
                 Subject = row.Count > 1 ? row[1]?.ToString() ?? string.Empty : string.Empty,
                 Body = row.Count > 2 ? row[2]?.ToString() ?? string.Empty : string.Empty,
-                IsHtml = row.Count > 3 && bool.TryParse(row[3]?.ToString(), out var isHtml) && isHtml
+                IsHtml = row.Count > 3 && bool.TryParse(row[3]?.ToString(), out var isHtml) && isHtml,
+                AttachmentFileIds = ParseAttachmentFileIds(row.Count > 4 ? row[4]?.ToString() : null)
             };
 
             if (!string.IsNullOrWhiteSpace(template.Name))
@@ -255,7 +277,7 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
         await EnsureTemplateSheetSetupAsync(spreadsheetId, token.AccessToken);
 
         using var readRequest = new HttpRequestMessage(HttpMethod.Get,
-            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"'{TemplateSheetName}'!A:D")}");
+            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"'{TemplateSheetName}'!A:E")}");
         readRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
 
         using var readResponse = await httpClient.SendAsync(readRequest);
@@ -271,7 +293,8 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
                 template.Name.Trim(),
                 template.Subject,
                 template.Body,
-                template.IsHtml.ToString().ToLowerInvariant()
+                template.IsHtml.ToString().ToLowerInvariant(),
+                string.Join(';', template.AttachmentFileIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal))
             }
         };
 
@@ -290,7 +313,7 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
         if (matchingRowIndex > 0)
         {
             writeRequest = new HttpRequestMessage(HttpMethod.Put,
-                $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"'{TemplateSheetName}'!A{matchingRowIndex}:D{matchingRowIndex}")}?valueInputOption=RAW")
+                $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"'{TemplateSheetName}'!A{matchingRowIndex}:E{matchingRowIndex}")}?valueInputOption=RAW")
             {
                 Content = JsonContent.Create(new { values })
             };
@@ -298,7 +321,7 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
         else
         {
             writeRequest = new HttpRequestMessage(HttpMethod.Post,
-                $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"'{TemplateSheetName}'!A:D")}:append?valueInputOption=RAW")
+                $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"'{TemplateSheetName}'!A:E")}:append?valueInputOption=RAW")
             {
                 Content = JsonContent.Create(new { values })
             };
@@ -318,12 +341,17 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
         {
             values = new[]
             {
-                new[] { "Name", "Email", "Active", "CustomField_1", "CustomField_2", "CustomField_3", "CustomField_4", "CustomField_5" }
+                new[]
+                {
+                    "Name", "Email", "Active",
+                    "CustomField_1", "CustomField_2", "CustomField_3", "CustomField_4", "CustomField_5",
+                    "CustomField_6", "CustomField_7", "CustomField_8", "CustomField_9", "CustomField_10"
+                }
             }
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Put,
-            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/A1:H1?valueInputOption=RAW")
+            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/A1:M1?valueInputOption=RAW")
         {
             Content = JsonContent.Create(payload)
         };
@@ -352,12 +380,12 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
         {
             values = new[]
             {
-                new[] { "TemplateName", "Subject", "Body", "IsHtml" }
+                new[] { "TemplateName", "Subject", "Body", "IsHtml", "AttachmentFileIds" }
             }
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Put,
-            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"'{TemplateSheetName}'!A1:D1")}?valueInputOption=RAW")
+            $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}/values/{Uri.EscapeDataString($"'{TemplateSheetName}'!A1:E1")}?valueInputOption=RAW")
         {
             Content = JsonContent.Create(payload)
         };
@@ -423,5 +451,18 @@ public sealed class GoogleSheetsService(HttpClient httpClient, IGoogleAuthServic
     {
         [JsonPropertyName("values")]
         public List<List<object?>>? Values { get; set; }
+    }
+
+    private static List<string> ParseAttachmentFileIds(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return [];
+        }
+
+        return raw
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
 }
