@@ -1,16 +1,106 @@
 ﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject IGoogleAuthService GoogleAuthService
+@inject AppState AppState
+
 <div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+    <header class="top-row px-4">
+        <div class="app-title">NewsLetterInator</div>
+
+        <div class="auth-controls">
+            @if (AppState.CurrentUser is null)
+            {
+                <button class="btn btn-primary btn-sm" @onclick="SignInAsync" disabled="@isBusy">Sign in with Google</button>
+            }
+            else
+            {
+                <div class="d-flex align-items-center gap-2">
+                    <span class="text-muted small">Signed in as</span>
+                    <strong>@AppState.CurrentUser.Name</strong>
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="SignOutAsync" disabled="@isBusy">Sign out</button>
+                </div>
+            }
+        </div>
+    </header>
 
     <main>
-        <div class="top-row px-4">
-            <a href="https://github.com" target="_blank" rel="noopener noreferrer">Project</a>
-        </div>
-
         <article class="content px-4">
+            @if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <div class="alert alert-danger mt-3">@errorMessage</div>
+            }
+
             @Body
         </article>
     </main>
 </div>
+
+@code {
+    private bool isBusy;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AppState.Changed += OnAppStateChanged;
+
+        try
+        {
+            var user = await GoogleAuthService.GetCurrentUserAsync();
+            AppState.SetSignedInUser(user);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    public void Dispose()
+    {
+        AppState.Changed -= OnAppStateChanged;
+    }
+
+    private void OnAppStateChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SignInAsync()
+    {
+        isBusy = true;
+        errorMessage = null;
+
+        try
+        {
+            await GoogleAuthService.RequestAccessTokenAsync();
+            AppState.SetSignedInUser(await GoogleAuthService.GetCurrentUserAsync());
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task SignOutAsync()
+    {
+        isBusy = true;
+        errorMessage = null;
+
+        try
+        {
+            await GoogleAuthService.SignOutAsync();
+            AppState.ResetForSignOut();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+}

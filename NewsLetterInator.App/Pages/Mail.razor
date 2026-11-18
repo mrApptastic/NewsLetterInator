@@ -41,58 +41,66 @@ else
         <p>Go to People and select at least one active recipient.</p>
     }
 
-    <div class="card p-3 mb-3">
-        <div class="row g-2 align-items-end">
-            <div class="col-md-5">
-                <label class="form-label" for="templateSelect">Template</label>
-                <select id="templateSelect" class="form-select" @bind="selectedTemplateName">
-                    <option value="">Choose template...</option>
-                    @foreach (var template in templates)
-                    {
-                        <option value="@template.Name">@template.Name</option>
-                    }
-                </select>
+    @if (ShowComposeSection)
+    {
+        <div class="card p-3 mb-3">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-5">
+                    <label class="form-label" for="templateSelect">Template</label>
+                    <select id="templateSelect" class="form-select" @bind="selectedTemplateName">
+                        <option value="">Choose template...</option>
+                        @foreach (var template in templates)
+                        {
+                            <option value="@template.Name">@template.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-outline-secondary w-100" @onclick="LoadTemplateAsync" disabled="@isSending">Load template</button>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="templateName">Save as template name</label>
+                    <input id="templateName" class="form-control" @bind="templateName" />
+                </div>
             </div>
-            <div class="col-md-3">
-                <button class="btn btn-outline-secondary w-100" @onclick="LoadTemplateAsync" disabled="@isSending">Load template</button>
-            </div>
-            <div class="col-md-4">
-                <label class="form-label" for="templateName">Save as template name</label>
-                <input id="templateName" class="form-control" @bind="templateName" />
+
+            <div class="mt-2">
+                <button class="btn btn-outline-primary" @onclick="SaveTemplateAsync" disabled="@isSending">Save template</button>
             </div>
         </div>
 
-        <div class="mt-2">
-            <button class="btn btn-outline-primary" @onclick="SaveTemplateAsync" disabled="@isSending">Save template</button>
+        <div class="mb-3">
+            <label for="subject" class="form-label">Subject</label>
+            <input id="subject" class="form-control" @bind="subject" />
         </div>
-    </div>
 
-    <div class="mb-3">
-        <label for="subject" class="form-label">Subject</label>
-        <input id="subject" class="form-control" @bind="subject" />
-    </div>
+        <div class="alert alert-info py-2">
+            Available merge fields: <code>{Name}</code>, <code>{Email}</code>, <code>{CustomField_1}</code>, <code>{CustomField_2}</code>, <code>{CustomField_3}</code>, <code>{CustomField_4}</code>, <code>{CustomField_5}</code>, <code>{CustomField_6}</code>, <code>{CustomField_7}</code>, <code>{CustomField_8}</code>, <code>{CustomField_9}</code>, <code>{CustomField_10}</code>
+        </div>
 
-    <div class="alert alert-info py-2">
-        Available merge fields: <code>{Name}</code>, <code>{Email}</code>, <code>{CustomField_1}</code>, <code>{CustomField_2}</code>, <code>{CustomField_3}</code>, <code>{CustomField_4}</code>, <code>{CustomField_5}</code>, <code>{CustomField_6}</code>, <code>{CustomField_7}</code>, <code>{CustomField_8}</code>, <code>{CustomField_9}</code>, <code>{CustomField_10}</code>
-    </div>
+        <div class="form-check mb-3">
+            <input id="isHtml" class="form-check-input" type="checkbox" @bind="isHtml" />
+            <label for="isHtml" class="form-check-label">Send as HTML</label>
+        </div>
 
-    <div class="form-check mb-3">
-        <input id="isHtml" class="form-check-input" type="checkbox" @bind="isHtml" />
-        <label for="isHtml" class="form-check-label">Send as HTML</label>
-    </div>
+        <div class="mb-3">
+            <label for="message" class="form-label">Message</label>
+            <textarea id="message" class="form-control" rows="7" @bind="message"></textarea>
+        </div>
 
-    <div class="mb-3">
-        <label for="message" class="form-label">Message</label>
-        <textarea id="message" class="form-control" rows="7" @bind="message"></textarea>
-    </div>
+        <div class="mb-3">
+            <label for="attachments" class="form-label">Attachments</label>
+            <InputFile id="attachments" class="form-control" OnChange="HandleAttachmentsSelected" multiple />
+            <div class="form-text">When you save a template, selected attachments are uploaded to Drive and linked to the template for reuse.</div>
+        </div>
+    }
 
-    <div class="mb-3">
-        <label for="attachments" class="form-label">Attachments</label>
-        <InputFile id="attachments" class="form-control" OnChange="HandleAttachmentsSelected" multiple />
-        <div class="form-text">When you save a template, selected attachments are uploaded to Drive and linked to the template for reuse.</div>
-    </div>
+    @if (WizardMode && !PreviewMode)
+    {
+        <div class="alert alert-secondary mb-3">Use the Next button to continue to preview and send.</div>
+    }
 
-    @if (AppState.SelectedPeople.Count > 0)
+    @if (ShowPreviewAndSendSection && AppState.SelectedPeople.Count > 0)
     {
         <div class="card mb-3">
             <div class="card-body">
@@ -148,16 +156,19 @@ else
         </div>
     }
 
-    <button class="btn btn-primary" @onclick="SendAsync" disabled="@(isSending || AppState.SelectedPeople.Count == 0)">Send</button>
+    @if (ShowPreviewAndSendSection)
+    {
+        <button class="btn btn-primary" @onclick="SendAsync" disabled="@(isSending || AppState.SelectedPeople.Count == 0)">Send</button>
+    }
 
-    @if (isSending)
+    @if (ShowPreviewAndSendSection && isSending)
     {
         <div class="alert alert-warning mt-3">
             Sending mail@(string.IsNullOrWhiteSpace(currentRecipientEmail) ? string.Empty : $" to {currentRecipientEmail}")...
         </div>
     }
 
-    @if (sentRecipients.Count > 0)
+    @if (ShowPreviewAndSendSection && sentRecipients.Count > 0)
     {
         <div class="mt-3">
             <strong>Sent:</strong>
@@ -182,6 +193,9 @@ else
 }
 
 @code {
+    [Parameter] public bool WizardMode { get; set; }
+    [Parameter] public bool PreviewMode { get; set; }
+
     private string subject = "Test mail";
     private string message = "Hej {Name},\n\nDette er en testmail fra vores POC.";
     private bool isHtml;
@@ -197,6 +211,8 @@ else
     private string selectedPreviewRecipientEmail = string.Empty;
     private const long MaxAttachmentSize = 10 * 1024 * 1024;
     private static readonly TimeSpan SendDelay = TimeSpan.FromSeconds(1);
+    private bool ShowComposeSection => !WizardMode || !PreviewMode;
+    private bool ShowPreviewAndSendSection => !WizardMode || PreviewMode;
 
     protected override async Task OnInitializedAsync()
     {

@@ -1,100 +1,163 @@
-﻿@page "/"
+@page "/"
 @inject IGoogleAuthService GoogleAuthService
 @inject AppState AppState
-@inject IConfiguration Configuration
+@implements IDisposable
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Newsletter Wizard</PageTitle>
 
-<h1>Home</h1>
+<h1>Newsletter Wizard</h1>
 
-<p>Authentication status: <strong>@(currentUser is null ? "Signed out" : "Signed in")</strong></p>
+<ol class="list-group list-group-numbered mb-4">
+    <li class="list-group-item @(AppState.IsSignedIn ? "list-group-item-success" : "list-group-item-warning")">
+        Login
+    </li>
+    <li class="list-group-item @(AppState.SelectedSheet is null ? string.Empty : "list-group-item-success")">
+        Select or create a sheet
+    </li>
+    <li class="list-group-item @(AppState.SelectedPeople.Count == 0 ? string.Empty : "list-group-item-success")">
+        Select recipients
+    </li>
+    <li class="list-group-item @(activeStep > WizardStep.ComposeMail ? "list-group-item-success" : string.Empty)">
+        Create the mail
+    </li>
+    <li class="list-group-item @(activeStep == WizardStep.PreviewAndSend ? "list-group-item-primary" : string.Empty)">
+        Preview and send
+    </li>
+</ol>
 
-@if (currentUser is null)
+@if (!AppState.IsSignedIn)
 {
-	<button class="btn btn-primary" @onclick="SignInAsync" disabled="@isBusy">Sign in with Google</button>
+    <div class="card p-4">
+        <h2 class="h4">Sign in to continue</h2>
+        <p class="text-muted mb-3">Use your Google account to access Sheets, Drive and Gmail.</p>
+        <button class="btn btn-primary" @onclick="SignInAsync" disabled="@isSigningIn">Sign in with Google</button>
+    </div>
 }
 else
 {
-	<div class="card p-3 mb-3" style="max-width: 520px;">
-		<div class="d-flex align-items-center gap-3">
-			@if (!string.IsNullOrWhiteSpace(currentUser.Picture))
-			{
-				<img src="@currentUser.Picture" alt="Profile" width="64" height="64" class="rounded-circle" />
-			}
-			<div>
-				<div><strong>@currentUser.Name</strong></div>
-				<div class="text-muted">@currentUser.Email</div>
-			</div>
-		</div>
-	</div>
-	<button class="btn btn-outline-secondary" @onclick="SignOutAsync" disabled="@isBusy">Sign out</button>
-}
+    <div class="d-flex gap-2 mb-3">
+        <button class="btn btn-outline-secondary" @onclick="MovePrevious" disabled="@(activeStep == WizardStep.Sheet)">Back</button>
+        <button class="btn btn-primary" @onclick="MoveNext" disabled="@(!CanMoveNext())">Next</button>
+    </div>
 
-<hr />
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
 
-<p>Selected sheet: <strong>@(AppState.SelectedSheet?.Name ?? "None")</strong></p>
-
-@if (!string.IsNullOrWhiteSpace(repoUrl))
-{
-	<p><a href="@repoUrl" target="_blank" rel="noopener noreferrer">GitHub repository</a></p>
-}
-
-@if (!string.IsNullOrWhiteSpace(errorMessage))
-{
-	<div class="alert alert-danger">@errorMessage</div>
+    @if (activeStep == WizardStep.Sheet)
+    {
+        <Sheets />
+    }
+    else if (activeStep == WizardStep.Recipients)
+    {
+        <People />
+    }
+    else
+    {
+        <Mail WizardMode="true" PreviewMode="@(activeStep == WizardStep.PreviewAndSend)" />
+    }
 }
 
 @code {
-	private GoogleUser? currentUser;
-	private bool isBusy;
-	private string? errorMessage;
-	private string? repoUrl;
+    private WizardStep activeStep = WizardStep.Sheet;
+    private bool isSigningIn;
+    private string? errorMessage;
 
-	protected override async Task OnInitializedAsync()
-	{
-		repoUrl = Configuration["GitHub:RepositoryUrl"];
-		currentUser = await GoogleAuthService.GetCurrentUserAsync();
-	}
+    protected override void OnInitialized()
+    {
+        AppState.Changed += OnAppStateChanged;
+        activeStep = GetHighestAvailableStep();
+    }
 
-	private async Task SignInAsync()
-	{
-		isBusy = true;
-		errorMessage = null;
+    public void Dispose()
+    {
+        AppState.Changed -= OnAppStateChanged;
+    }
 
-		try
-		{
-			await GoogleAuthService.RequestAccessTokenAsync();
-			currentUser = await GoogleAuthService.GetCurrentUserAsync();
-		}
-		catch (Exception ex)
-		{
-			errorMessage = ex.Message;
-		}
-		finally
-		{
-			isBusy = false;
-		}
-	}
+    private async Task SignInAsync()
+    {
+        isSigningIn = true;
+        errorMessage = null;
 
-	private async Task SignOutAsync()
-	{
-		isBusy = true;
-		errorMessage = null;
+        try
+        {
+            await GoogleAuthService.RequestAccessTokenAsync();
+            AppState.SetSignedInUser(await GoogleAuthService.GetCurrentUserAsync());
+            activeStep = GetHighestAvailableStep();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isSigningIn = false;
+        }
+    }
 
-		try
-		{
-			await GoogleAuthService.SignOutAsync();
-			currentUser = null;
-			AppState.ClearSelectedPeople();
-			AppState.SetSelectedSheet(null);
-		}
-		catch (Exception ex)
-		{
-			errorMessage = ex.Message;
-		}
-		finally
-		{
-			isBusy = false;
-		}
-	}
+    private void OnAppStateChanged()
+    {
+        if (!AppState.IsSignedIn)
+        {
+            activeStep = WizardStep.Sheet;
+            errorMessage = null;
+            _ = InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        var highestAvailableStep = GetHighestAvailableStep();
+        if (activeStep > highestAvailableStep)
+        {
+            activeStep = highestAvailableStep;
+        }
+
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void MovePrevious()
+    {
+        if (activeStep > WizardStep.Sheet)
+        {
+            activeStep--;
+        }
+    }
+
+    private void MoveNext()
+    {
+        if (!CanMoveNext())
+        {
+            return;
+        }
+
+        activeStep++;
+    }
+
+    private bool CanMoveNext()
+    {
+        return activeStep < GetHighestAvailableStep();
+    }
+
+    private WizardStep GetHighestAvailableStep()
+    {
+        if (!AppState.IsSignedIn || AppState.SelectedSheet is null)
+        {
+            return WizardStep.Sheet;
+        }
+
+        if (AppState.SelectedPeople.Count == 0)
+        {
+            return WizardStep.Recipients;
+        }
+
+        return WizardStep.PreviewAndSend;
+    }
+
+    private enum WizardStep
+    {
+        Sheet = 0,
+        Recipients = 1,
+        ComposeMail = 2,
+        PreviewAndSend = 3
+    }
 }

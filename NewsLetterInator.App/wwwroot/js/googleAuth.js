@@ -37,27 +37,6 @@ function clearStoredAuth() {
     }
 }
 
-function hydrateCachedSession() {
-    const cached = safeReadStorage();
-
-    if (!cached || !cached.accessToken || !cached.expiresAtUtc || !cached.user) {
-        clearStoredAuth();
-        return false;
-    }
-
-    const expiresAt = new Date(cached.expiresAtUtc).getTime();
-    const isStillValid = expiresAt > Date.now() + 60000;
-
-    if (!isStillValid) {
-        clearStoredAuth();
-        return false;
-    }
-
-    currentUser = cached.user;
-    lastAccessToken = cached.accessToken;
-    return true;
-}
-
 async function fetchUser(accessToken) {
     const response = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
         headers: {
@@ -77,44 +56,74 @@ async function fetchUser(accessToken) {
     };
 }
 
-export function getCurrentUser() {
-    if (!currentUser) {
-        hydrateCachedSession();
+export async function getCurrentUser() {
+    const cached = safeReadStorage();
+
+    if (!cached || !cached.accessToken || !cached.expiresAtUtc || !cached.user) {
+        clearStoredAuth();
+        return null;
     }
 
+    const expiresAt = new Date(cached.expiresAtUtc).getTime();
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() + 60000) {
+        clearStoredAuth();
+        return null;
+    }
+
+    currentUser = cached.user;
+    lastAccessToken = cached.accessToken;
     return currentUser;
 }
 
-export function requestAccessToken(clientId, scope) {
+function scopeIsSatisfied(cachedScope, requestedScope) {
+    if (!cachedScope) {
+        return false;
+    }
+
+    const granted = String(cachedScope).split(/\s+/).filter(Boolean);
+    const requested = String(requestedScope).split(/\s+/).filter(Boolean);
+    return requested.every(scope => granted.includes(scope));
+}
+
+export async function requestAccessToken(clientId, scope) {
     ensureGoogleLoaded();
 
     const cached = safeReadStorage();
-    if (cached && cached.accessToken && cached.expiresAtUtc) {
+    if (cached && cached.accessToken && cached.expiresAtUtc && scopeIsSatisfied(cached.scope, scope)) {
         const expiresAt = new Date(cached.expiresAtUtc).getTime();
-        if (expiresAt > Date.now() + 60000) {
+        if (Number.isFinite(expiresAt) && expiresAt > Date.now() + 60000) {
             currentUser = cached.user ?? currentUser;
             lastAccessToken = cached.accessToken;
-            return Promise.resolve({
+            return {
                 accessToken: cached.accessToken,
                 expiresAtUtc: cached.expiresAtUtc,
                 scope: cached.scope ?? scope
-            });
+            };
         }
+    } else if (cached) {
+        clearStoredAuth();
     }
 
     return new Promise((resolve, reject) => {
+        let settled = false;
+        let callbackTimeout = window.setTimeout(() => {
+            if (!settled) {
+                settled = true;
+                reject(new Error("Google login timed out before a token was returned."));
+            }
+        }, 60000);
+
         const tokenClient = google.accounts.oauth2.initTokenClient({
             client_id: clientId,
             scope,
             callback: async (response) => {
+                if (settled) {
+                    return;
+                }
+
                 if (response.error) {
-                    const shouldRetryWithConsent = Boolean(cached && cached.accessToken) && response.error !== "user_cancelled";
-
-                    if (shouldRetryWithConsent) {
-                        tokenClient.requestAccessToken({ prompt: "consent" });
-                        return;
-                    }
-
+                    window.clearTimeout(callbackTimeout);
+                    settled = true;
                     reject(new Error(response.error));
                     return;
                 }
@@ -122,7 +131,11 @@ export function requestAccessToken(clientId, scope) {
                 try {
                     const accessToken = response.access_token;
                     const expiresAtUtc = new Date(Date.now() + ((response.expires_in ?? 3600) * 1000)).toISOString();
-                    const user = await fetchUser(accessToken);
+                    let user = cached?.user ?? {
+                        name: "",
+                        email: "",
+                        picture: ""
+                    };
 
                     lastAccessToken = accessToken;
                     currentUser = user;
@@ -135,19 +148,37 @@ export function requestAccessToken(clientId, scope) {
                     };
 
                     safeWriteStorage(authPayload);
+                    window.clearTimeout(callbackTimeout);
+                    settled = true;
 
                     resolve({
                         accessToken,
                         expiresAtUtc,
                         scope: authPayload.scope
                     });
+
+                    fetchUser(accessToken)
+                        .then(profile => {
+                            currentUser = profile;
+                            safeWriteStorage({
+                                ...authPayload,
+                                user: profile
+                            });
+                        })
+                        .catch(() => {
+                            // The access token is usable even if the optional profile request fails.
+                        });
                 } catch (error) {
+                    window.clearTimeout(callbackTimeout);
+                    settled = true;
                     reject(error);
                 }
             }
         });
 
-        tokenClient.requestAccessToken({ prompt: cached && cached.accessToken ? "none" : "consent" });
+        tokenClient.requestAccessToken({
+            prompt: ""
+        });
     });
 }
 

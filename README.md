@@ -5,10 +5,12 @@ A small  Application which utilizes your own Google Sheets and Gmail for Newslet
 
 This is a proof-of-concept Blazor WebAssembly PWA that runs 100% client-side and can be deployed as static files to GitHub Pages.
 
-After signing in with Google, the user can:
-- list/create relevant Google Sheets
-- read/write people rows in a selected sheet
-- send email through Gmail API to selected recipients
+The app is presented as a wizard flow:
+1. Login with Google
+2. Select or create a sheet
+3. Select recipients
+4. Create mail content and attachments
+5. Preview and send through Gmail API
 
 ## Architecture
 
@@ -29,7 +31,7 @@ No database, no ASP.NET Core API, no server-side auth, no cloud backend.
 - .github/workflows/deploy.yml
 - Models/*
 - Services/*
-- Pages/Home.razor
+- Pages/Home.razor (wizard entry point)
 - Pages/Sheets.razor
 - Pages/People.razor
 - Pages/Mail.razor

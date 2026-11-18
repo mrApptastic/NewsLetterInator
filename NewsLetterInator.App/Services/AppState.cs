@@ -8,9 +8,19 @@ public sealed class AppState
 
     public event Action? Changed;
 
+    public GoogleUser? CurrentUser { get; private set; }
+
     public SheetInfo? SelectedSheet { get; private set; }
 
     public IReadOnlyList<Person> SelectedPeople => selectedPeopleByEmail.Values.Where(person => person.Active).ToList();
+
+    public bool IsSignedIn => CurrentUser is not null;
+
+    public void SetSignedInUser(GoogleUser? user)
+    {
+        CurrentUser = user;
+        Changed?.Invoke();
+    }
 
     public void SetSelectedSheet(SheetInfo? sheet)
     {
@@ -51,6 +61,14 @@ public sealed class AppState
 
     public void ClearSelectedPeople()
     {
+        selectedPeopleByEmail.Clear();
+        Changed?.Invoke();
+    }
+
+    public void ResetForSignOut()
+    {
+        CurrentUser = null;
+        SelectedSheet = null;
         selectedPeopleByEmail.Clear();
         Changed?.Invoke();
     }

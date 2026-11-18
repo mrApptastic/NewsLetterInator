@@ -54,4 +54,33 @@ public class AppStateTests
 
         Assert.True(changedEventRaised);
     }
+
+    [Fact]
+    public void SetSignedInUser_UpdatesAuthenticationState()
+    {
+        var state = new AppState();
+        var user = new GoogleUser { Name = "Tester", Email = "tester@example.com" };
+
+        state.SetSignedInUser(user);
+
+        Assert.True(state.IsSignedIn);
+        Assert.NotNull(state.CurrentUser);
+        Assert.Equal("tester@example.com", state.CurrentUser!.Email);
+    }
+
+    [Fact]
+    public void ResetForSignOut_ClearsSessionState()
+    {
+        var state = new AppState();
+        state.SetSignedInUser(new GoogleUser { Name = "Tester", Email = "tester@example.com" });
+        state.SetSelectedSheet(new SheetInfo { Id = "sheet-1", Name = "People" });
+        state.SetPersonSelected(new Person { Name = "A", Email = "a@example.com", Active = true }, true);
+
+        state.ResetForSignOut();
+
+        Assert.False(state.IsSignedIn);
+        Assert.Null(state.CurrentUser);
+        Assert.Null(state.SelectedSheet);
+        Assert.Empty(state.SelectedPeople);
+    }
 }
